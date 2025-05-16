@@ -125,6 +125,47 @@ def main(args):
         trust_remote_code=True,
         device_map=device_map).eval()
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True, use_fast=False)
+    
+    if not args.prompt:
+        #prompt = "The given frames are taken from a video of a traffic scene captured by a camera mounted on the front of a car. Analyze the video frames carefully and  generate a detailed caption about the road type, infrastructure, traffic density, rpad participants, environmental conditions, traffic events, crossings or junctions. Only describe what is clearly visible in the video. Focus on the most prominent and relevant features of the traffic scene. Do not hallucinate or make assumptions about elements not visible."
+
+        prompt = (
+            "The given frames are taken from a video of a traffic scene captured by a camera mounted on the front of a car. "
+            "Your task is to generate a detailed, factual caption that accurately describes: "
+            "1. Road types (highway, urban street, rural road, intersection, etc.); "
+            "2. Infrastructure visible (traffic lights, signs, lane markings, barriers, bridges, tunnels); "
+            "3. Traffic density (heavy, moderate, light, or none); "
+            "4. Road participants (cars, trucks, pedestrians, cyclists, motorcyclists); "
+            "5. Environmental conditions (weather, time of day, visibility); "
+            "6. Traffic events (stopping, turning, merging, etc.); "
+            "7. Crossings or junctions (pedestrian crossings, intersections, highway exits). "
+            "Important guidelines: Only describe what is clearly visible in the video; do not hallucinate or make assumptions about elements not visible; "
+            "be specific about positions; use objective language without speculation; maintain a consistent tense; avoid mentioning uncertain elements; "
+            "focus on the most prominent and relevant features of the traffic scene."
+        )
+
+        '''
+        prompt = (
+            "The given frames are taken from a video of a traffic scene captured by a camera mounted on the front of a car. "
+            "In this video, a pedestrian is seen crossing the street. Your task is to answer the following: "
+            "1. Is the pedestrian crossing at a marked crosswalk, intersection, or unmarked location? "
+            "2. What is the direction of the pedestrian’s movement relative to the vehicle (left to right, right to left, toward, or away)? "
+            "3. At what frame or approximate time does the pedestrian start crossing? "
+            "4. Are there any vehicles approaching or stopping near the pedestrian? "
+            "5. What is the traffic condition around the crossing (e.g., vehicle flow, pedestrian crowding)? "
+            "6. Is the pedestrian looking toward the vehicle or other vehicles while crossing? "
+            "7. Does the pedestrian pause, hesitate, or speed up while crossing? "
+            "8. What environmental factors might influence the pedestrian’s behavior (e.g., weather, lighting, road conditions)? "
+            "9. Based on the past few frames, where is the pedestrian likely to move next? Provide a short description of the predicted trajectory. "
+            "10. Are there any safety hazards or potential collisions visible? "
+
+            "Important guidelines: Use only observable evidence from the video; do not guess or assume intent. "
+            "Maintain an objective tone; use spatial and temporal reasoning. Be specific about movements and visible cues. "
+            "Do not hallucinate or describe unseen elements. Frame your answers clearly and concisely based on the visual content."
+        )
+        '''
+    else:
+        prompt = args.prompt
 
     video_files = [f for f in os.listdir(args.video_folder) if f.endswith('.mp4')]
     for video_file in tqdm(video_files, desc="Processing Videos"):
@@ -137,7 +178,7 @@ def main(args):
         )
         pixel_values = pixel_values.to(torch.bfloat16).cuda()
         video_prefix = ''.join([f'Frame{i+1}: <image>\n' for i in range(len(num_patches_list))])
-        question = video_prefix + args.prompt
+        question = video_prefix + prompt
 
         if args.stream:
             streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True, timeout=10)
@@ -165,17 +206,21 @@ def main(args):
         with open(f"{args.outdir}/{basename}.json", 'w') as outfile:
             json.dump({
                 'video': basename + ".mp4",
-                'prompt': args.prompt,
+                'model': args.model,
+                'num_frames': args.num_frames,
+                'img_size': 448,
+                'patch_size': args.patch_size,
+                'prompt': prompt,
                 'response': response
             }, outfile, indent=4)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="InternVL3 Video Captioning Script.")
     parser.add_argument('--video_folder', type=str, required=True, help='Path to folder with .mp4 videos')
-    parser.add_argument('--model', type=str, default='OpenGVLab/InternVL3-9B', help='Model path')
-    parser.add_argument('--prompt', type=str, default='Describe the video in detail.', help='Text prompt')
+    parser.add_argument('--model', type=str, default='OpenGVLab/InternVL3-9B-Instruct', help='Model path')
+    parser.add_argument('--prompt', type=str, default='', help='Text prompt')
     parser.add_argument('--num_frames', type=int, default=8, help='Number of frames to sample')
-    parser.add_argument('--patch_size', type=int, default=3, help='Max number of tiles per frame')
+    parser.add_argument('--patch_size', type=int, default=1, help='Max number of tiles per frame')
     parser.add_argument('--outdir', type=str, default='outputs', help='Directory to save responses')
     parser.add_argument('--stream', action='store_true', help='Enable streaming output mode')
     args = parser.parse_args()
